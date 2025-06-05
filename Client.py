@@ -1,0 +1,84 @@
+import asyncio
+import websockets
+import base64
+from io import BytesIO
+import json
+import pyautogui
+import time
+from PIL import ImageGrab
+
+# 截图并编码为 base64
+def capture_screen_base64():
+    screenshot = ImageGrab.grab()
+    buffered = BytesIO()
+    screenshot.save(buffered, format="PNG")
+    b64_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    return b64_str
+
+import pyautogui
+
+def execute_actions(actions):
+    screen_width, screen_height = pyautogui.size()
+    for action in actions:
+        if not isinstance(action, dict) or "type" not in action:
+            print(f"⚠️ 无效动作被跳过: {action}")
+            continue
+        if action["type"] == "move":
+            # 相对坐标乘屏幕大小得到绝对坐标
+            x = int(action["x"] * screen_width)
+            y = int(action["y"] * screen_height)
+            pyautogui.moveTo(x, y)
+        elif action["type"] == "click":
+            x = int(action["x"] * screen_width)
+            y = int(action["y"] * screen_height)
+            pyautogui.click(x, y)
+        elif action["type"] == "type":
+            pyautogui.write(action["text"])
+        elif action["type"] == "keypress":
+            pyautogui.press(action["key"])
+        time.sleep(1)
+
+# 主逻辑
+async def send_goal_and_act(goal):
+    uri = "ws://localhost:8765"
+    async with websockets.connect(uri, ping_interval=300, ping_timeout=300) as ws:
+        success = False
+        history = []
+
+        while not success:
+            screenshot_b64 = capture_screen_base64()
+            payload = {
+                "goal": goal,
+                "screenshot": screenshot_b64
+            }
+            await ws.send(json.dumps(payload))
+            print("🎯 发送目标，等待服务端规划...")
+
+            response = await ws.recv()
+            data = json.loads(response)
+            actions = data.get("actions", [])
+            success = data.get("success", False)
+
+            if success:
+                print("✅ 目标达成！")
+                return
+
+            print("🛠️ 接收到动作，开始执行...")
+            execute_actions(actions)
+
+            history.append({
+                "goal": goal,
+                "actions": actions,
+                "success": success
+            })
+
+            if not success:
+                print("❌ 尚未达成目标，继续尝试...\n")
+                time.sleep(1)
+            else:
+                print("✅ 目标达成！")
+
+# 示例运行
+if __name__ == "__main__":
+    time.sleep(3)
+    asyncio.run(send_goal_and_act('''打开浏览器，访问 https://www.bing.com/，搜索 "OpenAI 最新消息"，并点击第一个结果。'''))

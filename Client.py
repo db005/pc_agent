@@ -15,8 +15,7 @@ def capture_screen_base64():
     b64_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
     return b64_str
 
-import pyautogui
-
+# 执行动作
 def execute_actions(actions):
     screen_width, screen_height = pyautogui.size()
     for action in actions:
@@ -24,7 +23,6 @@ def execute_actions(actions):
             print(f"⚠️ 无效动作被跳过: {action}")
             continue
         if action["type"] == "move":
-            # 相对坐标乘屏幕大小得到绝对坐标
             x = int(action["x"] * screen_width)
             y = int(action["y"] * screen_height)
             pyautogui.moveTo(x, y)
@@ -38,16 +36,55 @@ def execute_actions(actions):
             pyautogui.press(action["key"])
         time.sleep(1)
 
+# 注册用户
+async def register_user(ws, email, password):
+    payload = {
+        "action": "register",
+        "email": email,
+        "password": password
+    }
+    await ws.send(json.dumps(payload))
+    response = await ws.recv()
+    return json.loads(response)
+
+# 登录用户
+async def login_user(ws, email, password):
+    payload = {
+        "action": "login",
+        "email": email,
+        "password": password
+    }
+    await ws.send(json.dumps(payload))
+    response = await ws.recv()
+    return json.loads(response)
+
 # 主逻辑
-async def send_goal_and_act(goal):
+async def send_goal_and_act(goal, email, password):
     uri = "ws://localhost:8765"
     async with websockets.connect(uri, ping_interval=300, ping_timeout=300) as ws:
+        # 登录或注册
+        login_result = await login_user(ws, email, password)
+        if not login_result.get("success"):
+            print("🔐 登录失败，尝试注册...")
+            register_result = await register_user(ws, email, password)
+            if not register_result.get("success"):
+                print("❌ 注册也失败了:", register_result.get("msg"))
+                return
+            token_id = register_result["token_id"]
+            print("✅ 注册成功，token_id:", token_id)
+        else:
+            token_id = login_result["token_id"]
+            print("✅ 登录成功，token_id:", token_id)
+
+        # 发送任务目标并执行动作
         success = False
         history = []
 
         while not success:
             screenshot_b64 = capture_screen_base64()
             payload = {
+                "action": "plan",
+                "token_id": token_id,
                 "goal": goal,
                 "screenshot": screenshot_b64
             }
@@ -81,4 +118,8 @@ async def send_goal_and_act(goal):
 # 示例运行
 if __name__ == "__main__":
     time.sleep(3)
-    asyncio.run(send_goal_and_act('''打开浏览器，访问 https://www.bing.com/，搜索 "OpenAI 最新消息"，并点击第一个结果。'''))
+    asyncio.run(send_goal_and_act(
+        '''打开浏览器，访问 https://www.bing.com/，搜索 "OpenAI 最新消息"，并点击第一个结果。''',
+        email="297347023@qq.com",
+        password="Bluedata259"
+    ))

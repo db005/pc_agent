@@ -115,6 +115,39 @@ async def send_goal_and_act(goal, email, password):
             else:
                 print("✅ 目标达成！")
 
+    async def write_slave_prompt(email, password, agent_id, prompt_text):
+        uri = "ws://localhost:8765"
+        async with websockets.connect(uri, ping_interval=300, ping_timeout=300) as ws:
+            # 登录
+            await ws.send(json.dumps({
+                "action": "login",
+                "email": email,
+                "password": password
+            }))
+            response = await ws.recv()
+            login_data = json.loads(response)
+
+            if not login_data.get("success"):
+                print("❌ 登录失败，无法保存提示词")
+                return
+
+            token_id = login_data["token_id"]
+
+            # 保存提示词
+            await ws.send(json.dumps({
+                "action": "save_system_prompt",
+                "token_id": token_id,
+                "agent_id": agent_id,
+                "prompt": prompt_text
+            }))
+            result = await ws.recv()
+            result_data = json.loads(result)
+
+            if result_data.get("success"):
+                print(f"✅ 系统提示词已保存 (prompt_id={result_data['prompt_id']})")
+            else:
+                print("❌ 保存提示词失败:", result_data.get("msg"))
+
 # 示例运行
 if __name__ == "__main__":
     time.sleep(3)

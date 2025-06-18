@@ -4,7 +4,7 @@ import websockets
 import time
 from GPTPlanner import GPTPlanner
 from UserControl import register, login, users_collection
-from SystemPromptManager import save_system_prompt
+from SystemPromptManager import save_system_prompt， search_system_prompts
 planner = GPTPlanner()
 from database import sessions_collection  # 假设你从 database.py 中导入
 from bson.objectid import ObjectId
@@ -85,10 +85,25 @@ async def handler(websocket):
                 await websocket.send(json.dumps({"success": False, "msg": "Invalid token_id"}))
                 return
 
-            agent_id = data.get("agent_id", "default")  # 如果你有多个 agent，可传入标识
+            agent_id = data.get("agent_id", "default")
+            title = data.get("title", "未命名提示词")
             prompt_text = data.get("prompt")
-            result = await save_system_prompt(user["_id"], agent_id, prompt_text)
-            await websocket.send(json.dumps(result))                                        
+
+            result = await save_system_prompt(user["_id"], agent_id, title, prompt_text)
+            await websocket.send(json.dumps(result))
+
+        elif action == "search_system_prompts":
+            query = data.get("query")
+            token_id = data.get("token_id")
+            agent_id = data.get("agent_id")  # 可选参数
+
+            user = await users_collection.find_one({"token_id": token_id})
+            if not user:
+                await websocket.send(json.dumps({"success": False, "msg": "Invalid token_id"}))
+                return
+
+            results = await search_system_prompts(query, user_id=user["_id"], agent_id=agent_id)
+            await websocket.send(json.dumps({"success": True, "results": results}))          
 
         else:
             await websocket.send(json.dumps({"success": False, "msg": "Invalid action"}))
